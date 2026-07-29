@@ -20,7 +20,7 @@ import {
   type Inquiry,
   getCompanyInfo, saveCompanyInfo, type CompanyInfo,
 } from "@/lib/admin-data";
-import { CATEGORIES, BRANDS, type Product } from "@/lib/products";
+import { CATEGORIES, type Product } from "@/lib/products";
 import { useServicesStore, ICON_NAMES, ICONS, type ServiceItem } from "@/lib/services-data";
 import { useGallery, GALLERY_CATEGORIES, type GalleryItem } from "@/lib/gallery-data";
 import { useBrands } from "@/lib/brands-data";
@@ -496,6 +496,7 @@ function ProductEditor({ product, onClose, onSave, uploadImage }: {
   uploadImage: (f: File) => Promise<string>;
 }) {
   const { categories } = useCategories();
+  const { items: brandItems } = useBrands();
 
   // Ensure images array is initialized from the product image if images is empty
   const productWithImages = useMemo(() => {
@@ -569,9 +570,9 @@ function ProductEditor({ product, onClose, onSave, uploadImage }: {
               </select>
             </Field>
             <Field label="Brand">
-              <select {...register("brand")} className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brand-red bg-white">
-                {BRANDS.map((b) => <option key={b} value={b}>{b}</option>)}
-              </select>
+                <select {...register("brand")} className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brand-red bg-white">
+                  {brandItems.map((b) => <option key={b.id} value={b.name}>{b.name}</option>)}
+                </select>
             </Field>
           </div>
           <Field label="Description" error={errors.description?.message}>
