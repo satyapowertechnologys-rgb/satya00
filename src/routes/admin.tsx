@@ -525,9 +525,12 @@ function ProductEditor({ product, onClose, onSave, uploadImage }: {
 
   const handleRemoveImage = (index: number) => {
     const next = [...images];
-    next.splice(index, 1);
+    // Preserve the slot by clearing the image instead of splicing, so positions remain stable
+    next[index] = "";
     setValue("images", next, { shouldValidate: true });
-    setValue("image", next[0] || "", { shouldValidate: true });
+    // Update primary image to first non‑empty image (or empty string)
+    const newPrimary = next.find((img) => img) || "";
+    setValue("image", newPrimary, { shouldValidate: true });
   };
 
   return (
