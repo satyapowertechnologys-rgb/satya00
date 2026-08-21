@@ -46,6 +46,12 @@ export function usePayments() {
   useEffect(() => {
     const fb = getFirebase();
     if (!fb || !isFirebaseConfigured()) return;
+    
+    // Only fetch payments list if an admin user is logged in
+    // This prevents the "Missing or insufficient permissions" error for public users
+    if (!fb.auth.currentUser) {
+       return;
+    }
 
     setLoading(true);
     const q = query(collection(fb.db, "payments"), orderBy("createdAt", "desc"));

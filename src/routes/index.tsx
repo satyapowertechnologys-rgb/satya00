@@ -162,7 +162,7 @@ function Home() {
             </div>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 md:gap-4">
-            {featured.map((p, i) => <ProductCard key={p.id} p={p} idx={i} />)}
+            {featured.map((p, i) => <ProductCard key={p.id} p={p} idx={i} allProducts={products} />)}
           </div>
         </div>
       </section>

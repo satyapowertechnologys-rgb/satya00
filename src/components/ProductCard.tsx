@@ -6,13 +6,13 @@ import { QuoteDialog } from "@/components/QuoteDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useProducts } from "@/lib/admin-data";
 
-export function ProductCard({ p, idx = 0 }: { p: Product; idx?: number }) {
+export function ProductCard({ p, idx = 0, allProducts = [] }: { p: Product; idx?: number; allProducts?: Product[] }) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeProduct, setActiveProduct] = useState<Product>(p);
   const [activeTab, setActiveTab] = useState<"details" | "pdf">("details");
   const [history, setHistory] = useState<Product[]>([]);
   const [selectedImage, setSelectedImage] = useState("");
-  const { products } = useProducts();
+  const products = allProducts;
 
   const handleOpen = () => {
     setActiveProduct(p);
@@ -74,12 +74,18 @@ export function ProductCard({ p, idx = 0 }: { p: Product; idx?: number }) {
           type="button"
           className="relative aspect-[16/10] sm:aspect-[4/3] bg-muted overflow-hidden block w-full text-left cursor-pointer focus:outline-none"
         >
-          <img
-            src={p.image}
-            alt={`${p.name} — ${p.brand} ${p.category} | SATYA POWER TECHNOLOGYS`}
-            loading="lazy"
-            className="h-full w-full object-contain bg-white p-2 transition-transform duration-500 ease-out group-hover:scale-[1.02]"
-          />
+          {p.image ? (
+            <img
+              src={p.image}
+              alt={`${p.name} — ${p.brand} ${p.category} | SATYA POWER TECHNOLOGYS`}
+              loading="lazy"
+              className="h-full w-full object-contain bg-white p-2 transition-transform duration-500 ease-out group-hover:scale-[1.02]"
+            />
+          ) : (
+            <div className="h-full w-full bg-muted flex items-center justify-center">
+              <span className="text-muted-foreground/30 text-xs font-medium uppercase tracking-widest">Image Loading</span>
+            </div>
+          )}
           {p.featured && (
             <span className="absolute top-2 right-2 sm:top-3 sm:right-3 z-10 bg-primary text-primary-foreground text-[11px] font-normal px-2.5 py-1">
               Top Product

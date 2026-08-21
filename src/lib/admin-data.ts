@@ -116,22 +116,26 @@ function readLocalProducts(): Product[] {
           // Restore images from local SEED template files to keep storage footprint negligible
           const seed = SEED_PRODUCTS.find((s) => s.id === p.id);
           
+          // If the cache had to strip the heavy Base64 image to fit within quota limits,
+          // it will be empty here. We intentionally do NOT fall back to seed images
+          // or a random SEED_PRODUCTS[0] image, because that causes the wrong images
+          // to flash on screen during the 1-second load time.
           if (!p.image || p.image.startsWith("data:") || p.image.startsWith("/src/assets/") || p.image.startsWith("/assets/") || (p.image.includes("product-") && !p.image.startsWith("data:"))) {
-            if (seed) {
+            // Leave it empty or preserve what's there so the UI can handle the missing state gracefully
+            if (seed && seed.image && !p.image) {
+              // Only use seed image if it explicitly matches this specific seed product ID
               p.image = seed.image;
-            } else if (p.image) {
-              p.image = resolveLegacyImage(p.image);
-            } else {
-              p.image = SEED_PRODUCTS[0]?.image || "";
+            } else if (!p.image) {
+              p.image = "";
             }
           }
           
           if (!p.images || p.images.length === 0 || p.images.every(img => !img || img.startsWith("data:"))) {
-            p.images = seed?.images && seed.images.length > 0 ? [...seed.images] : [p.image || ""];
+            p.images = [];
           } else {
             p.images = p.images.map((img) => {
               if (!img || img.startsWith("data:")) {
-                return seed?.image || p.image || "";
+                return p.image || "";
               }
               return img;
             });
@@ -200,37 +204,42 @@ function stripCacheData(list: Product[], level: "heavy" | "all" | "meta-only"): 
   });
 }
 
+let cacheWriteCount = 0;
+
 function writeLocalProducts(list: Product[], notify = false) {
   if (typeof localStorage === "undefined") return;
+  
+  cacheWriteCount++;
 
-  // Try to write the full list first (with base64 images intact for Demo Mode)
-  let cleaned = [...list];
+  // Keep only lightweight metadata and one primary image for the list cache
+  const cachedList = list.map(p => {
+    const { images, pdf, ...rest } = p; // Omit additional images and heavy pdfs
+    return rest as Product;
+  });
+
+  // Try to write the full list first
+  let cleaned = [...cachedList];
   let payloadStr = JSON.stringify(cleaned);
   let byteSize = new Blob([payloadStr]).size;
-  console.log(`Current cache size: ${(byteSize / (1024 * 1024)).toFixed(3)} MB`);
 
   // Level 1: If payload exceeds 3.5 MB, strip heavy base64 strings
   if (byteSize > 3.5 * 1024 * 1024) {
-    cleaned = stripCacheData(list, "heavy");
+    cleaned = stripCacheData(cachedList, "heavy");
     payloadStr = JSON.stringify(cleaned);
     byteSize = new Blob([payloadStr]).size;
-    console.log(`Payload exceeded 3.5MB. Stripped base64 images. New size: ${(byteSize / (1024 * 1024)).toFixed(3)} MB`);
   }
 
   // Level 2: If payload size is still greater than 3.5 MB, strip all image URL references
   if (byteSize > 3.5 * 1024 * 1024) {
-    cleaned = stripCacheData(list, "all");
+    cleaned = stripCacheData(cachedList, "all");
     payloadStr = JSON.stringify(cleaned);
     byteSize = new Blob([payloadStr]).size;
-    console.log(`Payload still exceeded 3.5MB. Stripped all image links. New size: ${(byteSize / (1024 * 1024)).toFixed(3)} MB`);
   }
 
   // Level 3: If payload size is still greater than 3.5 MB, keep metadata only
   if (byteSize > 3.5 * 1024 * 1024) {
-    cleaned = stripCacheData(list, "meta-only");
+    cleaned = stripCacheData(cachedList, "meta-only");
     payloadStr = JSON.stringify(cleaned);
-    byteSize = new Blob([payloadStr]).size;
-    console.log(`Payload exceeded quota limits. Stripped non-essential metadata. Final size: ${(byteSize / (1024 * 1024)).toFixed(3)} MB`);
   }
 
   try {
@@ -238,13 +247,11 @@ function writeLocalProducts(list: Product[], notify = false) {
   } catch (e) {
     console.warn("localStorage quota exceeded on initial try. Attempting compression backup...", e);
     try {
-      // Fall back directly to stripped heavy data
-      const baseClean = stripCacheData(list, "heavy");
+      const baseClean = stripCacheData(cachedList, "heavy");
       localStorage.setItem(PRODUCTS_LOCAL_KEY, JSON.stringify(baseClean));
     } catch (inner) {
       try {
-        // Fall back directly to metadata mapping to keep UI running
-        const metaOnly = stripCacheData(list, "meta-only");
+        const metaOnly = stripCacheData(cachedList, "meta-only");
         localStorage.setItem(PRODUCTS_LOCAL_KEY, JSON.stringify(metaOnly));
       } catch (last) {
         console.error("Critical: Failed to save metadata cache to localStorage.", last);
@@ -259,11 +266,10 @@ function writeLocalProducts(list: Product[], notify = false) {
 
 export function useProducts() {
   const [products, setProducts] = useState<Product[]>(() => {
-    // When Firebase is active, don't pre-populate from localStorage cache.
-    // The cache has stripped images (base64 removed to fit 3.5MB limit),
-    // which causes old/seed images to flash before onSnapshot delivers real data.
-    const fb = getFirebase();
-    if (fb && isFirebaseConfigured()) return [];
+    // Always use localStorage cache first to guarantee instant (<100ms) page loads.
+    // The cache may contain metadata only (if images were stripped to save space),
+    // but this ensures the layout and product cards appear immediately while 
+    // Firebase fetches the full Base64 payload in the background.
     return readLocalProducts();
   });
   const [loading, setLoading] = useState(() => {
@@ -286,6 +292,7 @@ export function useProducts() {
     }
 
     setLoading(true);
+    const fetchStart = performance.now();
 
     const globalRef = doc(fb.db, "settings", "global");
     getDoc(globalRef).then(async (globalSnap) => {
@@ -326,34 +333,16 @@ export function useProducts() {
           }
         }
 
-        // For images array: trust Firestore data. Only populate from image if array is empty.
-        if (!data.images || data.images.length === 0 || data.images.every(img => !img)) {
-          data.images = data.image ? [data.image] : [];
-        }
+        // For listing, we omit the images array from memory state completely
+        // to avoid storing 3-4 base64 images per product globally.
+        data.images = [];
 
         return { id: d.id, ...data };
       });
 
-      // Async: migrate old hashed-path images → base64 in Firestore for future loads.
-      list.forEach(async (p) => {
-        const isLegacyPath = p.image &&
-          (p.image.startsWith("/src/assets/") || p.image.startsWith("/assets/") ||
-           (p.image.includes("product-") && !p.image.startsWith("data:")));
-        if (isLegacyPath) {
-          const seedProduct = SEED_PRODUCTS.find((sp) => sp.id === p.id);
-          if (seedProduct) {
-            console.log(`Migrating product image to base64 for ${p.id}...`);
-            try {
-              const base64 = await imageUrlToBase64(seedProduct.image);
-              if (base64.startsWith("data:")) {
-                await updateDoc(doc(fb.db, "products", p.id), { image: base64 });
-              }
-            } catch (err) {
-              console.warn(`Failed to migrate image for ${p.id}:`, err);
-            }
-          }
-        }
-      });
+      // Note: Removed the automatic background image migration loop from here.
+      // Modifying Firestore documents directly inside an onSnapshot listener
+      // causes an infinite re-render loop, bogging down the browser and network!
 
       setProducts(list);
       // Write to localStorage for offline fallback, but don't dispatch storage event
